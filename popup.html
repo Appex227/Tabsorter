@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tab Organiser</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body class="flex flex-col min-h-[200px] max-h-[560px] bg-th-bg text-th-text overflow-hidden relative">
+
+  <!-- ─── Header Bar (48px) ─── -->
+  <header class="flex items-center justify-between h-12 px-4 border-b border-th-border shrink-0">
+    <div class="flex items-center gap-2">
+      <!-- Extension icon — 16px grid -->
+      <svg class="w-4 h-4 text-th-text shrink-0" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="1.5" y="1.5" width="5" height="5" rx="1"/>
+        <rect x="9.5" y="1.5" width="5" height="5" rx="1"/>
+        <rect x="1.5" y="9.5" width="5" height="5" rx="1"/>
+        <rect x="9.5" y="9.5" width="5" height="5" rx="1"/>
+      </svg>
+      <span class="text-sm font-semibold leading-none select-none">Tab Organiser</span>
+    </div>
+    <button id="btn-new-group" type="button"
+      class="text-[13px] font-medium text-white bg-th-accent py-1.5 px-3 rounded transition-transform duration-100 hover:brightness-110 active:scale-[0.97]">
+      New Group
+    </button>
+  </header>
+
+  <!-- ─── New Group Inline Form (hidden by default) ─── -->
+  <div id="new-group-form" class="hidden px-4 py-3 border-b border-th-border shrink-0">
+    <input type="text" id="group-name-input"
+      class="w-full h-9 px-2 text-[13px] bg-transparent border border-th-border rounded placeholder:text-th-text-ph focus:border-th-accent focus:outline-none"
+      placeholder="Group name..." maxlength="60" autocomplete="off" spellcheck="false">
+
+    <!-- Colour picker — 9 Chrome-native colours -->
+    <div id="colour-picker" class="flex items-center gap-2 mt-3">
+      <button type="button" data-color="red"    class="colour-dot w-2.5 h-2.5 rounded-full bg-grp-red" title="Red"></button>
+      <button type="button" data-color="orange" class="colour-dot w-2.5 h-2.5 rounded-full bg-grp-orange" title="Orange"></button>
+      <button type="button" data-color="yellow" class="colour-dot w-2.5 h-2.5 rounded-full bg-grp-yellow" title="Yellow"></button>
+      <button type="button" data-color="green"  class="colour-dot w-2.5 h-2.5 rounded-full bg-grp-green" title="Green"></button>
+      <button type="button" data-color="teal"   class="colour-dot w-2.5 h-2.5 rounded-full bg-grp-teal" title="Teal"></button>
+      <button type="button" data-color="blue"   class="colour-dot w-2.5 h-2.5 rounded-full bg-grp-blue selected" title="Blue"></button>
+      <button type="button" data-color="purple" class="colour-dot w-2.5 h-2.5 rounded-full bg-grp-purple" title="Purple"></button>
+      <button type="button" data-color="pink"   class="colour-dot w-2.5 h-2.5 rounded-full bg-grp-pink" title="Pink"></button>
+      <button type="button" data-color="grey"   class="colour-dot w-2.5 h-2.5 rounded-full bg-grp-grey" title="Grey"></button>
+    </div>
+
+    <div class="flex items-center justify-between mt-3">
+      <button type="button" id="btn-cancel-group"
+        class="text-[13px] font-medium text-th-text-sec transition-opacity duration-100 hover:opacity-70 active:scale-[0.97]">
+        Cancel
+      </button>
+      <button type="button" id="btn-create-group"
+        class="text-[13px] font-medium text-white bg-th-accent py-1.5 px-3 rounded transition-transform duration-100 hover:brightness-110 active:scale-[0.97]">
+        Create
+      </button>
+    </div>
+  </div>
+
+  <!-- ─── Scrollable Content ─── -->
+  <main id="content" class="flex-1 overflow-y-auto min-h-0 scroll-area">
+
+    <!-- Ungrouped Tabs (hidden when empty) -->
+    <section id="ungrouped-section" class="hidden">
+      <h2 class="text-[11px] font-medium text-th-text-sec uppercase tracking-[0.05em] mt-3 mb-2 px-4 select-none">
+        Ungrouped
+      </h2>
+      <div id="ungrouped-list">
+        <!-- JS renders tab rows here -->
+      </div>
+    </section>
+
+    <!-- Group Cards -->
+    <div id="groups-list" class="px-4 py-2 flex flex-col gap-2">
+      <!-- JS renders group cards here -->
+    </div>
+
+    <!-- Empty state — shown when nothing to display -->
+    <div id="empty-state" class="hidden flex-col items-center justify-center py-12 text-center">
+      <p class="text-[13px] text-th-text-sec">No open tabs to organise.</p>
+      <p class="text-[12px] text-th-text-sec mt-1">
+        Click <span class="font-medium text-th-accent">New Group</span> to get started.
+      </p>
+    </div>
+  </main>
+
+  <!-- ─── Comment Modal ─── -->
+  <div id="comment-overlay" class="hidden absolute inset-0 bg-black/40 z-50 flex items-center justify-center">
+    <div class="bg-th-surface rounded-[10px] p-5 w-[340px] shadow-lg">
+      <p id="comment-group-name" class="text-[13px] text-th-text-sec mb-3 truncate"></p>
+      <textarea id="comment-input"
+        class="w-full resize-none text-[13px] bg-transparent border border-th-border rounded px-2 py-2 placeholder:text-th-text-ph focus:border-th-accent focus:outline-none"
+        rows="4" maxlength="200" placeholder="Add a note..."></textarea>
+      <span id="comment-counter" class="block text-right text-[11px] text-th-text-sec mt-1">0 / 200</span>
+      <div class="flex items-center justify-between mt-4">
+        <button type="button" id="btn-skip-comment"
+          class="text-[13px] font-medium text-th-text-sec transition-opacity duration-100 hover:opacity-70 active:scale-[0.97]">
+          Skip
+        </button>
+        <button type="button" id="btn-save-comment"
+          class="text-[13px] font-medium text-white bg-th-accent py-1.5 px-3 rounded transition-transform duration-100 hover:brightness-110 active:scale-[0.97]">
+          Save Note
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ─── Footer Bar (44px) ─── -->
+  <footer id="footer" class="flex items-center justify-center h-11 border-t border-th-border shrink-0">
+    <button id="btn-stack-toggle" type="button"
+      class="text-[13px] text-th-text-sec transition-opacity duration-100 hover:opacity-70 active:scale-[0.97]">
+      Stack All
+    </button>
+  </footer>
+
+  <!-- Dynamic classes used by popup.js (ensures Tailwind compiles them) -->
+  <template id="tw-safelist" class="
+    text-th-destructive bg-th-border text-th-accent bg-th-bg
+    cursor-grab cursor-grabbing italic ml-auto
+    w-4 h-4 w-2.5 h-2.5 gap-1 py-1 px-4 mt-2 pt-2
+    rounded-lg p-3 border-t flex-col flex-1 select-none
+  "></template>
+
+  <script src="popup.js"></script>
+</body>
+</html>
