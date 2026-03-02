@@ -77,6 +77,10 @@
     display: flex;
   }
 
+  .tab-row:hover {
+    background-color: var(--clr-border);
+  }
+
   .tab-row .remove-btn {
     opacity: 0;
     transition: opacity 100ms ease;

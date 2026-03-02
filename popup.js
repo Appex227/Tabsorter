@@ -93,7 +93,7 @@
 
   function tabRowHTML(tab, inGroup) {
     const fav = tab.favIconUrl
-      ? `<img class="w-4 h-4 shrink-0 rounded-sm" src="${escAttr(tab.favIconUrl)}" alt="" onerror="this.style.display='none'">`
+      ? `<img class="w-4 h-4 shrink-0 rounded-sm" src="${escAttr(tab.favIconUrl)}" alt="">`
       : '<span class="w-4 h-4 shrink-0 rounded-sm bg-th-border inline-block"></span>';
 
     const handle = `<span class="w-4 h-4 shrink-0 text-th-text-sec cursor-grab">${ICONS.drag}</span>`;
@@ -219,7 +219,8 @@
 
     // Empty state
     const hasContent = ungrouped.length > 0 || allGroups.length > 0;
-    $('empty-state').style.display = hasContent ? 'none' : 'flex';
+    $('empty-state').classList.toggle('hidden', hasContent);
+    $('empty-state').classList.toggle('flex', !hasContent);
   }
 
   // ─── Comment Modal ──────────────────────────────────────────────────────────
@@ -607,6 +608,11 @@
 
     // Delegated click actions inside the scrollable content
     $('content').addEventListener('click', handleAction);
+
+    // Favicon error fallback (capture phase — error events don't bubble)
+    $('content').addEventListener('error', (e) => {
+      if (e.target.tagName === 'IMG') e.target.style.display = 'none';
+    }, true);
 
     // Drag & drop (delegated on body for start/end, on content for over/leave/drop)
     document.body.addEventListener('dragstart', onDragStart);
