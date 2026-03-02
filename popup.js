@@ -26,6 +26,22 @@
     Object.entries(OUR_TO_CHROME).map(([k, v]) => [v, k]),
   );
 
+  // ─── Comment separator (shown in Chrome's tab strip title) ─────────────────
+
+  const SEP = ' \u00B7 '; // " · "
+
+  function resolveGroup(chromeTitle) {
+    for (const [key, val] of Object.entries(comments)) {
+      if (val && chromeTitle === key + SEP + val) {
+        return { name: key, comment: val };
+      }
+    }
+    if (comments[chromeTitle]) {
+      return { name: chromeTitle, comment: comments[chromeTitle] };
+    }
+    return { name: chromeTitle, comment: '' };
+  }
+
   // ─── DOM shortcut ───────────────────────────────────────────────────────────
 
   const $ = (id) => document.getElementById(id);
@@ -177,15 +193,16 @@
     const allGroups = [];
 
     for (const ng of nativeGroups) {
+      const resolved = resolveGroup(ng.title);
       allGroups.push({
         type: 'native',
         id: String(ng.id),
         numericId: ng.id,
-        title: ng.title,
+        title: resolved.name,
         color: CHROME_TO_OURS[ng.color] || 'grey',
         collapsed: ng.collapsed,
         tabs: tabs.filter((t) => t.groupId === ng.id),
-        comment: comments[ng.title] || '',
+        comment: resolved.comment,
       });
     }
 
@@ -231,10 +248,12 @@
   // ─── Comment Modal ──────────────────────────────────────────────────────────
 
   let commentTitle = null;
+  let commentGroupId = null;
   let commentDone = null;
 
-  function showCommentModal(title, existing, onDone) {
+  function showCommentModal(title, existing, groupId, onDone) {
     commentTitle = title;
+    commentGroupId = groupId || null;
     commentDone = onDone || null;
     $('comment-group-name').textContent = title;
     const textarea = $('comment-input');
@@ -248,6 +267,7 @@
     $('comment-overlay').classList.add('hidden');
     const cb = commentDone;
     commentTitle = null;
+    commentGroupId = null;
     commentDone = null;
     if (cb) cb();
   }
@@ -283,14 +303,15 @@
     });
 
     let created = false;
+    let createdGroupId = null;
 
     if (activeTab) {
       try {
-        const gid = await chrome.tabs.group({
+        createdGroupId = await chrome.tabs.group({
           tabIds: [activeTab.id],
           createProperties: { windowId: activeTab.windowId },
         });
-        await chrome.tabGroups.update(gid, {
+        await chrome.tabGroups.update(createdGroupId, {
           title: name,
           color: OUR_TO_CHROME[selectedColor] || 'blue',
           collapsed: false,
@@ -311,7 +332,7 @@
     }
 
     await render();
-    showCommentModal(name, '', async () => {
+    showCommentModal(name, '', createdGroupId, async () => {
       await render();
     });
   }
@@ -564,7 +585,8 @@
       case 'edit-comment': {
         e.stopPropagation();
         const title = node.dataset.title;
-        showCommentModal(title, comments[title] || '', async () => {
+        const ecGid = node.dataset.groupType === 'native' ? node.dataset.groupId : null;
+        showCommentModal(title, comments[title] || '', ecGid, async () => {
           await render();
         });
         break;
@@ -631,8 +653,21 @@
 
     $('btn-save-comment').addEventListener('click', async () => {
       if (commentTitle) {
-        comments[commentTitle] = $('comment-input').value.trim();
+        const text = $('comment-input').value.trim();
+        comments[commentTitle] = text;
         await saveComments();
+
+        if (commentGroupId) {
+          const newTitle = text
+            ? commentTitle + SEP + text
+            : commentTitle;
+          try {
+            await chrome.tabGroups.update(
+              parseInt(commentGroupId, 10),
+              { title: newTitle },
+            );
+          } catch {}
+        }
       }
       hideCommentModal();
     });
