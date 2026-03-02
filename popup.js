@@ -134,7 +134,8 @@
            draggable="true" data-drag-type="group">
 
         <div class="group-header flex items-center gap-2 cursor-pointer"
-             data-action="toggle-collapse" data-group-id="${g.id}" data-group-type="${g.type}">
+             data-action="toggle-collapse" data-group-id="${g.id}" data-group-type="${g.type}"
+             title="${g.comment ? escAttr(g.comment) : ''}">
           <span class="w-2.5 h-2.5 rounded-full ${dot} shrink-0"></span>
           <span class="text-[13px] font-medium truncate">${esc(g.title)}</span>
           ${comment ? `<span class="text-[12px] text-th-text-sec italic truncate" style="max-width:120px">${esc(comment)}</span>` : ''}
@@ -151,6 +152,10 @@
                   data-action="edit-comment" data-group-id="${g.id}" data-group-type="${g.type}"
                   data-title="${escAttr(g.title)}" data-color="${g.color}">
             <span class="w-4 h-4">${ICONS.pencil}</span> Edit comment
+          </button>
+          <button class="flex items-center gap-1 text-th-text-sec cursor-pointer hover:opacity-70"
+                  data-action="toggle-stack" data-group-id="${g.id}" data-group-type="${g.type}">
+            <span class="w-4 h-4">${ICONS.chevron}</span> ${collapsed ? 'Unstack' : 'Stack'}
           </button>
           <button class="flex items-center gap-1 text-th-destructive cursor-pointer hover:opacity-70"
                   data-action="delete-group" data-group-id="${g.id}" data-group-type="${g.type}">
@@ -508,6 +513,17 @@
         const gid = parseInt(node.dataset.groupId, 10);
         const g = await getGroupById(gid);
         if (g) await chrome.tabGroups.update(gid, { collapsed: !g.collapsed });
+        await render();
+        break;
+      }
+
+      case 'toggle-stack': {
+        e.stopPropagation();
+        const gstype = node.dataset.groupType;
+        if (gstype !== 'native') break;
+        const gsid = parseInt(node.dataset.groupId, 10);
+        const gs = await getGroupById(gsid);
+        if (gs) await chrome.tabGroups.update(gsid, { collapsed: !gs.collapsed });
         await render();
         break;
       }
