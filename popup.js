@@ -484,6 +484,39 @@
     await render();
   }
 
+  // ─── Delete All Groups ──────────────────────────────────────────────────────
+
+  async function deleteAllGroups() {
+    const btn = $('btn-delete-all');
+
+    if (btn.dataset.confirm !== 'true') {
+      btn.textContent = 'Confirm?';
+      btn.dataset.confirm = 'true';
+      setTimeout(() => {
+        btn.textContent = 'Delete All';
+        btn.dataset.confirm = '';
+      }, 2000);
+      return;
+    }
+
+    btn.textContent = 'Delete All';
+    btn.dataset.confirm = '';
+
+    const groups = await getTabGroups();
+    for (const g of groups) {
+      try {
+        const groupTabs = await chrome.tabs.query({ groupId: g.id });
+        if (groupTabs.length > 0) {
+          await chrome.tabs.ungroup(groupTabs.map((t) => t.id));
+        }
+      } catch {}
+    }
+
+    pendingGroups = [];
+    await savePending();
+    await render();
+  }
+
   // ─── Delegated click handler ────────────────────────────────────────────────
 
   async function handleAction(e) {
@@ -619,8 +652,9 @@
       }
     });
 
-    // Stack / Unstack
+    // Stack / Unstack + Delete All
     $('btn-stack-toggle').addEventListener('click', toggleStackAll);
+    $('btn-delete-all').addEventListener('click', deleteAllGroups);
 
     // Delegated click actions inside the scrollable content
     $('content').addEventListener('click', handleAction);
