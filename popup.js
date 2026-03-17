@@ -67,21 +67,16 @@
 
   // ─── Chrome API helpers ─────────────────────────────────────────────────────
 
-  let windowId = null;
-
-  async function getWindowId() {
-    if (windowId !== null) return windowId;
-    const win = await chrome.windows.getCurrent();
-    windowId = win.id;
-    return windowId;
-  }
-
   async function getTabs() {
-    return chrome.tabs.query({ windowId: await getWindowId() });
+    return chrome.tabs.query({ currentWindow: true });
   }
 
   async function getTabGroups() {
-    return chrome.tabGroups.query({ windowId: await getWindowId() });
+    return chrome.tabGroups.query({ windowId: (await chrome.windows.getCurrent()).id });
+  }
+
+  async function getCurrentWindowId() {
+    return (await chrome.windows.getCurrent()).id;
   }
 
   async function getGroupById(id) {
@@ -430,7 +425,7 @@
         const pg = pendingGroups.find((p) => p.id === gid);
         if (!pg) return;
         try {
-          const wid = await getWindowId();
+          const wid = await getCurrentWindowId();
           const newId = await chrome.tabs.group({
             tabIds: [tabId],
             createProperties: { windowId: wid },
