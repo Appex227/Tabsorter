@@ -189,6 +189,18 @@
 
     for (const ng of nativeGroups) {
       const resolved = resolveGroup(ng.title);
+      const storedComment = comments[resolved.name] || '';
+
+      // Keep Chrome's title in sync with the stored comment so the
+      // tab strip and any saved-group chips in the bookmarks bar
+      // always display "name · comment".
+      const expectedTitle = storedComment
+        ? resolved.name + SEP + storedComment
+        : resolved.name;
+      if (ng.title !== expectedTitle) {
+        try { await chrome.tabGroups.update(ng.id, { title: expectedTitle }); } catch {}
+      }
+
       allGroups.push({
         type: 'native',
         id: String(ng.id),
@@ -197,7 +209,7 @@
         color: CHROME_TO_OURS[ng.color] || 'grey',
         collapsed: ng.collapsed,
         tabs: tabs.filter((t) => t.groupId === ng.id),
-        comment: resolved.comment,
+        comment: storedComment,
       });
     }
 
