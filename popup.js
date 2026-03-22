@@ -292,9 +292,13 @@
     $('empty-state').classList.toggle('hidden', hasContent);
     $('empty-state').classList.toggle('flex', !hasContent);
 
-    syncBookmarks(allGroups).catch((err) =>
-      console.error('[Tab Organiser] bookmark sync failed:', err),
-    );
+    try {
+      syncBookmarks(allGroups).catch((err) =>
+        console.error('[Tab Organiser] bookmark sync failed:', err),
+      );
+    } catch (err) {
+      console.error('[Tab Organiser] bookmark sync threw:', err);
+    }
   }
 
   // ─── Bookmarks bar sync ───────────────────────────────────────────────────
