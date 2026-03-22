@@ -39,14 +39,23 @@
   const SEP = ' \u00B7 '; // " · "
 
   function resolveGroup(chromeTitle) {
+    // 1. Exact match: "name · comment" matches stored key+value
     for (const [key, val] of Object.entries(comments)) {
       if (val && chromeTitle === key + SEP + val) {
         return { name: key, comment: val };
       }
     }
+    // 2. Prefix match: title starts with "key · " (handles changed comments)
+    for (const key of Object.keys(comments)) {
+      if (chromeTitle.startsWith(key + SEP)) {
+        return { name: key, comment: comments[key] };
+      }
+    }
+    // 3. Plain title matches a comment key directly
     if (comments[chromeTitle]) {
       return { name: chromeTitle, comment: comments[chromeTitle] };
     }
+    // 4. No match — treat full title as the name
     return { name: chromeTitle, comment: '' };
   }
 
@@ -60,27 +69,51 @@
   let pendingGroups = [];
 
   async function loadStorage() {
-    const data = await chrome.storage.sync.get(['comments', 'pendingGroups']);
-    comments = data.comments || {};
-    pendingGroups = data.pendingGroups || [];
+    try {
+      const data = await chrome.storage.sync.get(['comments', 'pendingGroups']);
+      comments = data.comments || {};
+      pendingGroups = data.pendingGroups || [];
+    } catch (err) {
+      console.error('[Tab Organiser] loadStorage failed:', err);
+      comments = {};
+      pendingGroups = [];
+    }
   }
 
   async function saveComments() {
-    await chrome.storage.sync.set({ comments });
+    try {
+      await chrome.storage.sync.set({ comments });
+    } catch (err) {
+      console.error('[Tab Organiser] saveComments failed:', err);
+    }
   }
 
   async function savePending() {
-    await chrome.storage.sync.set({ pendingGroups });
+    try {
+      await chrome.storage.sync.set({ pendingGroups });
+    } catch (err) {
+      console.error('[Tab Organiser] savePending failed:', err);
+    }
   }
 
   // ─── Chrome API helpers ─────────────────────────────────────────────────────
 
   async function getTabs() {
-    return chrome.tabs.query({ currentWindow: true });
+    try {
+      return await chrome.tabs.query({ currentWindow: true });
+    } catch (err) {
+      console.error('[Tab Organiser] getTabs failed:', err);
+      return [];
+    }
   }
 
   async function getTabGroups() {
-    return chrome.tabGroups.query({ windowId: (await chrome.windows.getCurrent()).id });
+    try {
+      return await chrome.tabGroups.query({ windowId: (await chrome.windows.getCurrent()).id });
+    } catch (err) {
+      console.error('[Tab Organiser] getTabGroups failed:', err);
+      return [];
+    }
   }
 
   async function getCurrentWindowId() {
@@ -88,7 +121,12 @@
   }
 
   async function getGroupById(id) {
-    try { return await chrome.tabGroups.get(id); } catch { return null; }
+    try {
+      return await chrome.tabGroups.get(id);
+    } catch (err) {
+      console.error('[Tab Organiser] getGroupById(%d) failed:', id, err);
+      return null;
+    }
   }
 
   // ─── Tiny helpers ───────────────────────────────────────────────────────────
@@ -189,24 +227,23 @@
   async function render() {
     const [tabs, nativeGroups] = await Promise.all([getTabs(), getTabGroups()]);
 
-    // Separate ungrouped tabs
     const ungrouped = tabs.filter((t) => t.groupId === -1);
 
-    // Build unified group list (native first, then pending)
     const allGroups = [];
 
     for (const ng of nativeGroups) {
       const resolved = resolveGroup(ng.title);
       const storedComment = comments[resolved.name] || '';
 
-      // Keep Chrome's title in sync with the stored comment so the
-      // tab strip and any saved-group chips in the bookmarks bar
-      // always display "name · comment".
       const expectedTitle = storedComment
         ? resolved.name + SEP + storedComment
         : resolved.name;
       if (ng.title !== expectedTitle) {
-        try { await chrome.tabGroups.update(ng.id, { title: expectedTitle }); } catch {}
+        try {
+          await chrome.tabGroups.update(ng.id, { title: expectedTitle });
+        } catch (err) {
+          console.error('[Tab Organiser] title sync failed for group %d:', ng.id, err);
+        }
       }
 
       allGroups.push({
@@ -233,7 +270,6 @@
       });
     }
 
-    // Ungrouped section
     const section = $('ungrouped-section');
     const list = $('ungrouped-list');
     if (ungrouped.length > 0) {
@@ -244,36 +280,32 @@
       list.innerHTML = '';
     }
 
-    // Groups section
     $('groups-list').innerHTML = allGroups.map(groupCardHTML).join('');
 
-    // Stack / Unstack button
     const allNativeCollapsed =
       nativeGroups.length > 0 && nativeGroups.every((g) => g.collapsed);
     $('btn-stack-toggle').textContent = allNativeCollapsed
       ? 'Unstack All'
       : 'Stack All';
 
-    // Empty state
     const hasContent = ungrouped.length > 0 || allGroups.length > 0;
     $('empty-state').classList.toggle('hidden', hasContent);
     $('empty-state').classList.toggle('flex', !hasContent);
 
-    // Sync bookmark folders in the bookmarks bar
-    syncBookmarks(allGroups);
+    syncBookmarks(allGroups).catch((err) =>
+      console.error('[Tab Organiser] bookmark sync failed:', err),
+    );
   }
 
   // ─── Bookmarks bar sync ───────────────────────────────────────────────────
-  // Creates a bookmark folder per group at the START of the bookmarks bar.
-  // Uses getTree() to reliably find the bar, and delete-then-recreate to
-  // avoid stale entries.
 
   async function syncBookmarks(groups) {
     let barId;
     try {
       const tree = await chrome.bookmarks.getTree();
       barId = tree[0].children[0].id;
-    } catch {
+    } catch (err) {
+      console.error('[Tab Organiser] bookmarks.getTree failed:', err);
       return;
     }
 
@@ -309,9 +341,13 @@
               title: tab.title || 'Untitled',
               url: tab.url,
             });
-          } catch {}
+          } catch (err) {
+            console.error('[Tab Organiser] bookmark create failed:', err);
+          }
         }
-      } catch {}
+      } catch (err) {
+        console.error('[Tab Organiser] folder create failed for "%s":', g.title, err);
+      }
     }
 
     await chrome.storage.local.set({ bkmkMap: newMap });
@@ -383,14 +419,16 @@
           tabIds: [activeTab.id],
           createProperties: { windowId: activeTab.windowId },
         });
+        const chromeColor = OUR_TO_CHROME[selectedColor] || 'blue';
         await chrome.tabGroups.update(createdGroupId, {
           title: name,
-          color: OUR_TO_CHROME[selectedColor] || 'blue',
+          color: chromeColor,
           collapsed: false,
         });
+        console.log('[Tab Organiser] created group %d: title="%s" color="%s"', createdGroupId, name, chromeColor);
         created = true;
-      } catch {
-        /* falls through to pending path */
+      } catch (err) {
+        console.error('[Tab Organiser] doCreateGroup failed:', err);
       }
     }
 
@@ -507,14 +545,16 @@
             tabIds: [tabId],
             createProperties: { windowId: wid },
           });
+          const chromeColor = OUR_TO_CHROME[pg.color] || 'blue';
           await chrome.tabGroups.update(newId, {
             title: pg.title,
-            color: OUR_TO_CHROME[pg.color] || 'blue',
+            color: chromeColor,
           });
+          console.log('[Tab Organiser] materialised pending group %d: title="%s" color="%s"', newId, pg.title, chromeColor);
           pendingGroups = pendingGroups.filter((p) => p.id !== gid);
           await savePending();
         } catch (err) {
-          console.error('Failed to materialise pending group:', err);
+          console.error('[Tab Organiser] materialise pending group failed:', err);
         }
       } else {
         try {
@@ -523,14 +563,14 @@
             groupId: parseInt(gid, 10),
           });
         } catch (err) {
-          console.error('Failed to add tab to group:', err);
+          console.error('[Tab Organiser] add tab to group failed:', err);
         }
       }
     } else {
       try {
         await chrome.tabs.ungroup(tabId);
       } catch (err) {
-        console.error('Failed to ungroup tab:', err);
+        console.error('[Tab Organiser] ungroup tab failed:', err);
       }
     }
   }
@@ -558,23 +598,27 @@
         { index: tgtIndex },
       );
     } catch (err) {
-      console.error('Failed to reorder groups:', err);
+      console.error('[Tab Organiser] reorder groups failed:', err);
     }
   }
 
   // ─── Stack / Unstack ───────────────────────────────────────────────────────
 
   async function toggleStackAll() {
-    const groups = await getTabGroups();
-    if (groups.length === 0) return;
+    try {
+      const groups = await getTabGroups();
+      if (groups.length === 0) return;
 
-    const allCollapsed = groups.every((g) => g.collapsed);
-    await Promise.all(
-      groups.map((g) =>
-        chrome.tabGroups.update(g.id, { collapsed: !allCollapsed }),
-      ),
-    );
-    await render();
+      const allCollapsed = groups.every((g) => g.collapsed);
+      await Promise.all(
+        groups.map((g) =>
+          chrome.tabGroups.update(g.id, { collapsed: !allCollapsed }),
+        ),
+      );
+      await render();
+    } catch (err) {
+      console.error('[Tab Organiser] toggleStackAll failed:', err);
+    }
   }
 
   // ─── Delete All Groups ──────────────────────────────────────────────────────
@@ -602,7 +646,9 @@
         if (groupTabs.length > 0) {
           await chrome.tabs.ungroup(groupTabs.map((t) => t.id));
         }
-      } catch {}
+      } catch (err) {
+        console.error('[Tab Organiser] deleteAll ungroup failed for group %d:', g.id, err);
+      }
     }
 
     pendingGroups = [];
@@ -628,7 +674,11 @@
 
       case 'remove-tab': {
         e.stopPropagation();
-        try { await chrome.tabs.ungroup(parseInt(node.dataset.tabId, 10)); } catch {}
+        try {
+          await chrome.tabs.ungroup(parseInt(node.dataset.tabId, 10));
+        } catch (err) {
+          console.error('[Tab Organiser] remove-tab failed:', err);
+        }
         await render();
         break;
       }
@@ -637,8 +687,12 @@
         const gtype = node.dataset.groupType;
         if (gtype !== 'native') break;
         const gid = parseInt(node.dataset.groupId, 10);
-        const g = await getGroupById(gid);
-        if (g) await chrome.tabGroups.update(gid, { collapsed: !g.collapsed });
+        try {
+          const g = await getGroupById(gid);
+          if (g) await chrome.tabGroups.update(gid, { collapsed: !g.collapsed });
+        } catch (err) {
+          console.error('[Tab Organiser] toggle-collapse failed for group %d:', gid, err);
+        }
         await render();
         break;
       }
@@ -648,8 +702,12 @@
         const gstype = node.dataset.groupType;
         if (gstype !== 'native') break;
         const gsid = parseInt(node.dataset.groupId, 10);
-        const gs = await getGroupById(gsid);
-        if (gs) await chrome.tabGroups.update(gsid, { collapsed: !gs.collapsed });
+        try {
+          const gs = await getGroupById(gsid);
+          if (gs) await chrome.tabGroups.update(gsid, { collapsed: !gs.collapsed });
+        } catch (err) {
+          console.error('[Tab Organiser] toggle-stack failed for group %d:', gsid, err);
+        }
         await render();
         break;
       }
@@ -677,7 +735,9 @@
             if (groupTabs.length > 0) {
               await chrome.tabs.ungroup(groupTabs.map((t) => t.id));
             }
-          } catch {}
+          } catch (err) {
+            console.error('[Tab Organiser] delete-group failed for group %s:', gid, err);
+          }
         } else {
           pendingGroups = pendingGroups.filter((p) => p.id !== gid);
           await savePending();
@@ -691,7 +751,6 @@
   // ─── One-time event wiring ──────────────────────────────────────────────────
 
   function setupEvents() {
-    // New group form
     $('btn-new-group').addEventListener('click', () => {
       resetForm();
       $('new-group-form').classList.remove('hidden');
@@ -709,7 +768,6 @@
       if (e.key === 'Escape') $('new-group-form').classList.add('hidden');
     });
 
-    // Colour picker
     $('colour-picker').addEventListener('click', (e) => {
       const dot = e.target.closest('.colour-dot');
       if (!dot) return;
@@ -720,7 +778,6 @@
       dot.classList.add('selected');
     });
 
-    // Comment modal
     $('comment-input').addEventListener('input', updateCounter);
 
     $('btn-save-comment').addEventListener('click', async () => {
@@ -738,7 +795,9 @@
               parseInt(commentGroupId, 10),
               { title: newTitle },
             );
-          } catch {}
+          } catch (err) {
+            console.error('[Tab Organiser] comment title update failed:', err);
+          }
         }
       }
       hideCommentModal();
@@ -759,19 +818,15 @@
       }
     });
 
-    // Stack / Unstack + Delete All
     $('btn-stack-toggle').addEventListener('click', toggleStackAll);
     $('btn-delete-all').addEventListener('click', deleteAllGroups);
 
-    // Delegated click actions inside the scrollable content
     $('content').addEventListener('click', handleAction);
 
-    // Favicon error fallback (capture phase — error events don't bubble)
     $('content').addEventListener('error', (e) => {
       if (e.target.tagName === 'IMG') e.target.style.display = 'none';
     }, true);
 
-    // Drag & drop (delegated on body for start/end, on content for over/leave/drop)
     document.body.addEventListener('dragstart', onDragStart);
     document.body.addEventListener('dragend', onDragEnd);
     $('content').addEventListener('dragover', onDragOver);
