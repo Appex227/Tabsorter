@@ -26,6 +26,14 @@
     Object.entries(OUR_TO_CHROME).map(([k, v]) => [v, k]),
   );
 
+  // ─── Colour emoji for bookmark folders ──────────────────────────────────────
+
+  const COLOR_EMOJI = {
+    red: '\uD83D\uDD34', orange: '\uD83D\uDFE0', yellow: '\uD83D\uDFE1',
+    green: '\uD83D\uDFE2', teal: '\uD83D\uDD35',  blue: '\uD83D\uDD35',
+    purple: '\uD83D\uDFE3', pink: '\uD83D\uDD34',  grey: '\u26AA',
+  };
+
   // ─── Comment separator (shown in Chrome's tab strip title) ─────────────────
 
   const SEP = ' \u00B7 '; // " · "
@@ -250,6 +258,72 @@
     const hasContent = ungrouped.length > 0 || allGroups.length > 0;
     $('empty-state').classList.toggle('hidden', hasContent);
     $('empty-state').classList.toggle('flex', !hasContent);
+
+    // Sync bookmark folders in the bookmarks bar
+    syncBookmarks(allGroups);
+  }
+
+  // ─── Bookmarks bar sync ───────────────────────────────────────────────────
+
+  async function syncBookmarks(groups) {
+    const stored = await chrome.storage.local.get('bkmkMap');
+    const bkmkMap = stored.bkmkMap || {};
+    const seen = new Set();
+
+    for (const g of groups) {
+      seen.add(g.title);
+
+      const emoji = COLOR_EMOJI[g.color] || '\u26AA';
+      const name = g.comment
+        ? `${emoji} ${g.title} \u00B7 ${g.comment}`
+        : `${emoji} ${g.title}`;
+
+      let fid = bkmkMap[g.title];
+
+      if (fid) {
+        try {
+          await chrome.bookmarks.get(fid);
+        } catch {
+          fid = null;
+        }
+      }
+
+      if (fid) {
+        try { await chrome.bookmarks.update(fid, { title: name }); } catch {}
+        try {
+          const kids = await chrome.bookmarks.getChildren(fid);
+          await Promise.all(kids.map((k) => chrome.bookmarks.remove(k.id)));
+        } catch {}
+      } else {
+        try {
+          const f = await chrome.bookmarks.create({ parentId: '1', title: name });
+          fid = f.id;
+          bkmkMap[g.title] = fid;
+        } catch {
+          continue;
+        }
+      }
+
+      for (const tab of g.tabs) {
+        if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) continue;
+        try {
+          await chrome.bookmarks.create({
+            parentId: fid,
+            title: tab.title || 'Untitled',
+            url: tab.url,
+          });
+        } catch {}
+      }
+    }
+
+    for (const [key, id] of Object.entries(bkmkMap)) {
+      if (!seen.has(key)) {
+        try { await chrome.bookmarks.removeTree(id); } catch {}
+        delete bkmkMap[key];
+      }
+    }
+
+    await chrome.storage.local.set({ bkmkMap });
   }
 
   // ─── Comment Modal ──────────────────────────────────────────────────────────
