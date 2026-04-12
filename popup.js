@@ -409,15 +409,49 @@
 
     $('new-group-form').classList.add('hidden');
 
-    pendingGroups.push({
-      id: 'p_' + Date.now(),
-      title: name,
-      color: selectedColor,
+    const [activeTab] = await chrome.tabs.query({
+      active: true,
+      currentWindow: true,
     });
-    await savePending();
+
+    let createdGroupId = null;
+
+    if (activeTab && activeTab.groupId === -1) {
+      const url = activeTab.url || '';
+      if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:')) {
+        alert('Chrome internal pages cannot be grouped. Please switch to a regular webpage first.');
+        $('new-group-form').classList.remove('hidden');
+        $('group-name-input').value = name;
+        return;
+      }
+      try {
+        createdGroupId = await chrome.tabs.group({
+          tabIds: [activeTab.id],
+          createProperties: { windowId: activeTab.windowId },
+        });
+        const chromeColor = OUR_TO_CHROME[selectedColor] || 'blue';
+        await chrome.tabGroups.update(createdGroupId, {
+          title: name,
+          color: chromeColor,
+          collapsed: false,
+        });
+      } catch (err) {
+        console.error('[Tab Organiser] doCreateGroup failed:', err);
+        createdGroupId = null;
+      }
+    }
+
+    if (!createdGroupId) {
+      pendingGroups.push({
+        id: 'p_' + Date.now(),
+        title: name,
+        color: selectedColor,
+      });
+      await savePending();
+    }
 
     await render();
-    showCommentModal(name, '', null, async () => {
+    showCommentModal(name, '', createdGroupId, async () => {
       await render();
     });
   }
