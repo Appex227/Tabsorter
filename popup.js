@@ -409,44 +409,15 @@
 
     $('new-group-form').classList.add('hidden');
 
-    const [activeTab] = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
+    pendingGroups.push({
+      id: 'p_' + Date.now(),
+      title: name,
+      color: selectedColor,
     });
-
-    let created = false;
-    let createdGroupId = null;
-
-    if (activeTab) {
-      try {
-        createdGroupId = await chrome.tabs.group({
-          tabIds: [activeTab.id],
-          createProperties: { windowId: activeTab.windowId },
-        });
-        const chromeColor = OUR_TO_CHROME[selectedColor] || 'blue';
-        await chrome.tabGroups.update(createdGroupId, {
-          title: name,
-          color: chromeColor,
-          collapsed: false,
-        });
-        console.log('[Tab Organiser] created group %d: title="%s" color="%s"', createdGroupId, name, chromeColor);
-        created = true;
-      } catch (err) {
-        console.error('[Tab Organiser] doCreateGroup failed:', err);
-      }
-    }
-
-    if (!created) {
-      pendingGroups.push({
-        id: 'p_' + Date.now(),
-        title: name,
-        color: selectedColor,
-      });
-      await savePending();
-    }
+    await savePending();
 
     await render();
-    showCommentModal(name, '', createdGroupId, async () => {
+    showCommentModal(name, '', null, async () => {
       await render();
     });
   }
