@@ -26,14 +26,6 @@
     Object.entries(OUR_TO_CHROME).map(([k, v]) => [v, k]),
   );
 
-  // ─── Colour emoji for bookmark folders ──────────────────────────────────────
-
-  const COLOR_EMOJI = {
-    red: '\uD83D\uDD34', orange: '\uD83D\uDFE0', yellow: '\uD83D\uDFE1',
-    green: '\uD83D\uDFE2', teal: '\uD83D\uDD35',  blue: '\uD83D\uDD35',
-    purple: '\uD83D\uDFE3', pink: '\uD83D\uDD34',  grey: '\u26AA',
-  };
-
   // ─── Comment separator (shown in Chrome's tab strip title) ─────────────────
 
   const SEP = ' \u00B7 '; // " · "
@@ -292,69 +284,6 @@
     $('empty-state').classList.toggle('hidden', hasContent);
     $('empty-state').classList.toggle('flex', !hasContent);
 
-    try {
-      syncBookmarks(allGroups).catch((err) =>
-        console.error('[Tab Organiser] bookmark sync failed:', err),
-      );
-    } catch (err) {
-      console.error('[Tab Organiser] bookmark sync threw:', err);
-    }
-  }
-
-  // ─── Bookmarks bar sync ───────────────────────────────────────────────────
-
-  async function syncBookmarks(groups) {
-    let barId;
-    try {
-      const tree = await chrome.bookmarks.getTree();
-      barId = tree[0].children[0].id;
-    } catch (err) {
-      console.error('[Tab Organiser] bookmarks.getTree failed:', err);
-      return;
-    }
-
-    const stored = await chrome.storage.local.get('bkmkMap');
-    const oldMap = stored.bkmkMap || {};
-
-    for (const id of Object.values(oldMap)) {
-      try { await chrome.bookmarks.removeTree(id); } catch {}
-    }
-
-    const newMap = {};
-    let idx = 0;
-
-    for (const g of groups) {
-      const emoji = COLOR_EMOJI[g.color] || '\u26AA';
-      const label = g.comment
-        ? `${emoji} ${g.title} \u00B7 ${g.comment}`
-        : `${emoji} ${g.title}`;
-
-      try {
-        const folder = await chrome.bookmarks.create({
-          parentId: barId,
-          title: label,
-          index: idx++,
-        });
-        newMap[g.title] = folder.id;
-
-        for (const tab of g.tabs) {
-          if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://')) continue;
-          try {
-            await chrome.bookmarks.create({
-              parentId: folder.id,
-              title: tab.title || 'Untitled',
-              url: tab.url,
-            });
-          } catch (err) {
-            console.error('[Tab Organiser] bookmark create failed:', err);
-          }
-        }
-      } catch (err) {
-        console.error('[Tab Organiser] folder create failed for "%s":', g.title, err);
-      }
-    }
-
-    await chrome.storage.local.set({ bkmkMap: newMap });
   }
 
   // ─── Comment Modal ──────────────────────────────────────────────────────────
@@ -417,13 +346,6 @@
     let createdGroupId = null;
 
     if (activeTab && activeTab.groupId === -1) {
-      const url = activeTab.url || '';
-      if (url.startsWith('chrome://') || url.startsWith('chrome-extension://') || url.startsWith('about:')) {
-        alert('Chrome internal pages cannot be grouped. Please switch to a regular webpage first.');
-        $('new-group-form').classList.remove('hidden');
-        $('group-name-input').value = name;
-        return;
-      }
       try {
         createdGroupId = await chrome.tabs.group({
           tabIds: [activeTab.id],
