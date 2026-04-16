@@ -338,18 +338,16 @@
 
     $('new-group-form').classList.add('hidden');
 
-    const [activeTab] = await chrome.tabs.query({
-      active: true,
-      currentWindow: true,
-    });
-
     let createdGroupId = null;
+    const tabIdsToGroup = pendingTabIds.length > 0 ? [...pendingTabIds] : null;
+    pendingTabIds = [];
 
-    if (activeTab && activeTab.groupId === -1) {
+    if (tabIdsToGroup) {
       try {
+        const wid = await getCurrentWindowId();
         createdGroupId = await chrome.tabs.group({
-          tabIds: [activeTab.id],
-          createProperties: { windowId: activeTab.windowId },
+          tabIds: tabIdsToGroup,
+          createProperties: { windowId: wid },
         });
         const chromeColor = OUR_TO_CHROME[selectedColor] || 'blue';
         await chrome.tabGroups.update(createdGroupId, {
@@ -358,8 +356,31 @@
           collapsed: false,
         });
       } catch (err) {
-        console.error('[Tab Organiser] doCreateGroup failed:', err);
+        console.error('[Tab Organiser] doCreateGroup (drag) failed:', err);
         createdGroupId = null;
+      }
+    } else {
+      const [activeTab] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
+
+      if (activeTab && activeTab.groupId === -1) {
+        try {
+          createdGroupId = await chrome.tabs.group({
+            tabIds: [activeTab.id],
+            createProperties: { windowId: activeTab.windowId },
+          });
+          const chromeColor = OUR_TO_CHROME[selectedColor] || 'blue';
+          await chrome.tabGroups.update(createdGroupId, {
+            title: name,
+            color: chromeColor,
+            collapsed: false,
+          });
+        } catch (err) {
+          console.error('[Tab Organiser] doCreateGroup failed:', err);
+          createdGroupId = null;
+        }
       }
     }
 
@@ -381,6 +402,20 @@
   // ─── Drag & Drop ───────────────────────────────────────────────────────────
 
   let dragPayload = null;
+  let pendingTabIds = [];
+  let hoverTimer = null;
+  let hoverTarget = null;
+
+  function clearHoverTimer() {
+    if (hoverTimer) {
+      clearTimeout(hoverTimer);
+      hoverTimer = null;
+    }
+    if (hoverTarget) {
+      hoverTarget.classList.remove('drop-target');
+      hoverTarget = null;
+    }
+  }
 
   function onDragStart(e) {
     const el = e.target.closest('[draggable="true"]');
@@ -405,6 +440,7 @@
   }
 
   function onDragEnd(e) {
+    clearHoverTimer();
     const el = e.target.closest('[draggable="true"]');
     if (el) el.classList.remove('dragging');
     document.querySelectorAll('.drop-target').forEach((x) =>
@@ -424,6 +460,27 @@
         e.preventDefault();
         e.dataTransfer.dropEffect = 'move';
         if (card) card.classList.add('drop-target');
+      }
+
+      const ungroupedRow = e.target.closest('#ungrouped-list .tab-row');
+      if (ungroupedRow && !card) {
+        const hoveredTabId = parseInt(ungroupedRow.dataset.tabId, 10);
+        if (hoveredTabId !== dragPayload.tabId && ungroupedRow !== hoverTarget) {
+          clearHoverTimer();
+          hoverTarget = ungroupedRow;
+          ungroupedRow.classList.add('drop-target');
+          hoverTimer = setTimeout(() => {
+            ungroupedRow.classList.remove('drop-target');
+            pendingTabIds = [dragPayload.tabId, hoveredTabId];
+            resetForm();
+            $('new-group-form').classList.remove('hidden');
+            $('group-name-input').focus();
+            hoverTimer = null;
+            hoverTarget = null;
+          }, 600);
+        }
+      } else if (!ungroupedRow || (ungroupedRow && parseInt(ungroupedRow.dataset.tabId, 10) === dragPayload.tabId)) {
+        clearHoverTimer();
       }
     } else if (dragPayload.type === 'group') {
       if (card && card.dataset.groupId !== dragPayload.groupId) {
